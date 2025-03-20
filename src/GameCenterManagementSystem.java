@@ -193,4 +193,8 @@ public class GameCenterManagementSystem extends JFrame {
         }
         JOptionPane.showMessageDialog(this, result.toString());
     }
+
+    public static void main(String[] args) {
+        new GameCenterManagementSystem();
+    }
 }
