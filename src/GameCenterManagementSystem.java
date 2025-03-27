@@ -1,11 +1,15 @@
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.sql.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 public class GameCenterManagementSystem extends JFrame {
     private static final String DB_URL = "jdbc:mysql://localhost:3306/GameCenterDB";
-    private static final String DB_USER = "root";  // Change if needed
-    private static final String DB_PASSWORD = "Chirag05@Chirag05@";  // Change if you have a password
+    private static final String DB_USER = "root";
+    private static final String DB_PASSWORD = "Chirag05@Chirag05@";
 
     public GameCenterManagementSystem() {
         setTitle("Game Center Management System");
@@ -25,7 +29,7 @@ public class GameCenterManagementSystem extends JFrame {
         btnAddCustomer.addActionListener(e -> addCustomer());
         btnViewCustomers.addActionListener(e -> viewCustomers());
         btnBookGame.addActionListener(e -> bookGame());
-        btnViewBookings.addActionListener(e -> viewBookings()); // Added action listener
+        btnViewBookings.addActionListener(e -> viewBookings());
 
         add(btnAddGame);
         add(btnViewGames);
@@ -37,21 +41,34 @@ public class GameCenterManagementSystem extends JFrame {
         setVisible(true);
     }
 
-    // Connect to the database
+
     private Connection getConnection() throws SQLException {
         return DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
     }
 
-    // Add a new game
+    // ✅ Updated: Add Game with Duplicate Check
     private void addGame() {
         String gameName = JOptionPane.showInputDialog(this, "Enter Game Name:");
-        if (gameName == null || gameName.isEmpty()) return;
+        if (gameName == null || gameName.trim().isEmpty()) return;
 
         String priceStr = JOptionPane.showInputDialog(this, "Enter Price per Hour:");
         try {
             double price = Double.parseDouble(priceStr);
             if (price <= 0) throw new NumberFormatException();
 
+            // Check if the game already exists
+            try (Connection conn = getConnection();
+                 PreparedStatement checkStmt = conn.prepareStatement("SELECT COUNT(*) FROM games WHERE game_name = ?")) {
+                checkStmt.setString(1, gameName);
+                ResultSet rs = checkStmt.executeQuery();
+                rs.next();
+                if (rs.getInt(1) > 0) {
+                    JOptionPane.showMessageDialog(this, "Error: Game already exists!");
+                    return;
+                }
+            }
+
+            // Insert new game
             try (Connection conn = getConnection();
                  PreparedStatement stmt = conn.prepareStatement("INSERT INTO games (game_name, price_per_hour) VALUES (?, ?)")) {
                 stmt.setString(1, gameName);
@@ -64,29 +81,23 @@ public class GameCenterManagementSystem extends JFrame {
         }
     }
 
-    // View games
-    private void viewGames() {
-        StringBuilder result = new StringBuilder("Games Available:\n");
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT * FROM games")) {
-
-            while (rs.next()) {
-                result.append("Game ID: ").append(rs.getInt("game_id"))
-                        .append(", Name: ").append(rs.getString("game_name"))
-                        .append(", Price: ").append(rs.getDouble("price_per_hour"))
-                        .append("\n");
-            }
-        } catch (SQLException e) {
-            result.append("Error: ").append(e.getMessage());
-        }
-        JOptionPane.showMessageDialog(this, result.toString());
-    }
-
-    // Add a new customer
+    // ✅ Updated: Add Customer with Duplicate Check
     private void addCustomer() {
         String customerName = JOptionPane.showInputDialog(this, "Enter Customer Name:");
-        if (customerName == null || customerName.isEmpty()) return;
+        if (customerName == null || customerName.trim().isEmpty()) return;
+
+        try (Connection conn = getConnection();
+             PreparedStatement checkStmt = conn.prepareStatement("SELECT COUNT(*) FROM customers WHERE customer_name = ?")) {
+            checkStmt.setString(1, customerName);
+            ResultSet rs = checkStmt.executeQuery();
+            rs.next();
+            if (rs.getInt(1) > 0) {
+                JOptionPane.showMessageDialog(this, "Error: Customer already exists!");
+                return;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
 
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement("INSERT INTO customers (customer_name) VALUES (?)")) {
@@ -98,100 +109,176 @@ public class GameCenterManagementSystem extends JFrame {
         }
     }
 
-    // View customers
+    private void viewGames() {
+        JPanel panel = new JPanel(new BorderLayout());
+        JTextField searchField = new JTextField(20);
+        JTextArea textArea = new JTextArea(15, 30);
+        textArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(textArea);
+
+        panel.add(searchField, BorderLayout.NORTH);
+        panel.add(scrollPane, BorderLayout.CENTER);
+        loadGames("", textArea);
+
+        searchField.getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent e) { updateResults(); }
+            public void removeUpdate(DocumentEvent e) { updateResults(); }
+            public void changedUpdate(DocumentEvent e) { updateResults(); }
+
+            private void updateResults() {
+                loadGames(searchField.getText(), textArea);
+            }
+        });
+
+        JOptionPane.showMessageDialog(this, panel, "View Games", JOptionPane.PLAIN_MESSAGE);
+    }
+
+    private void loadGames(String keyword, JTextArea textArea) {
+        textArea.setText("");
+        String query = "SELECT * FROM games WHERE game_name LIKE ?";
+
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setString(1, "%" + keyword + "%");
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                textArea.append("Game ID: " + rs.getInt("game_id") + ", Name: " + rs.getString("game_name") + ", Price: $" + rs.getDouble("price_per_hour") + "\n");
+            }
+        } catch (SQLException e) {
+            textArea.setText("Error: " + e.getMessage());
+        }
+    }
+
     private void viewCustomers() {
-        StringBuilder result = new StringBuilder("Registered Customers:\n");
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT * FROM customers")) {
+        JPanel panel = new JPanel(new BorderLayout());
+        JTextField searchField = new JTextField(20);
+        JTextArea textArea = new JTextArea(15, 30);
+        textArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(textArea);
 
-            while (rs.next()) {
-                result.append("Customer ID: ").append(rs.getInt("customer_id"))
-                        .append(", Name: ").append(rs.getString("customer_name"))
-                        .append("\n");
+        panel.add(searchField, BorderLayout.NORTH);
+        panel.add(scrollPane, BorderLayout.CENTER);
+        loadCustomers("", textArea);
+
+        searchField.getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent e) { updateResults(); }
+            public void removeUpdate(DocumentEvent e) { updateResults(); }
+            public void changedUpdate(DocumentEvent e) { updateResults(); }
+
+            private void updateResults() {
+                loadCustomers(searchField.getText(), textArea);
             }
-        } catch (SQLException e) {
-            result.append("Error: ").append(e.getMessage());
-        }
-        JOptionPane.showMessageDialog(this, result.toString());
+        });
+
+        JOptionPane.showMessageDialog(this, panel, "View Customers", JOptionPane.PLAIN_MESSAGE);
     }
 
-    // Book a game
+    private void loadCustomers(String keyword, JTextArea textArea) {
+        textArea.setText("");
+        String query = "SELECT * FROM customers WHERE customer_name LIKE ?";
+
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setString(1, "%" + keyword + "%");
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                textArea.append("Customer ID: " + rs.getInt("customer_id") + ", Name: " + rs.getString("customer_name") + "\n");
+            }
+        } catch (SQLException e) {
+            textArea.setText("Error: " + e.getMessage());
+        }
+    }
+
+    // ✅ Book a Game
     private void bookGame() {
-        String customerIdStr = JOptionPane.showInputDialog(this, "Enter Customer ID:");
-        String gameIdStr = JOptionPane.showInputDialog(this, "Enter Game ID:");
-        String hoursStr = JOptionPane.showInputDialog(this, "Enter Number of Hours:");
-
-        try {
+        try (Connection conn = getConnection()) {
+            // Get customer ID
+            String customerIdStr = JOptionPane.showInputDialog(this, "Enter Customer ID:");
             int customerId = Integer.parseInt(customerIdStr);
+
+            // Get game ID
+            String gameIdStr = JOptionPane.showInputDialog(this, "Enter Game ID:");
             int gameId = Integer.parseInt(gameIdStr);
-            int hours = Integer.parseInt(hoursStr);
 
-            // Validate Customer ID
-            try (Connection conn = getConnection();
-                 PreparedStatement stmt = conn.prepareStatement("SELECT * FROM customers WHERE customer_id = ?")) {
-                stmt.setInt(1, customerId);
-                ResultSet rs = stmt.executeQuery();
-                if (!rs.next()) {
-                    JOptionPane.showMessageDialog(this, "Error: Customer ID not found!");
+            // Get duration in hours
+            String durationStr = JOptionPane.showInputDialog(this, "Enter Duration (in hours):");
+            int duration = Integer.parseInt(durationStr);
+
+            // Fetch game price per hour
+            String priceQuery = "SELECT price_per_hour FROM games WHERE game_id = ?";
+            double pricePerHour = 0;
+
+            try (PreparedStatement priceStmt = conn.prepareStatement(priceQuery)) {
+                priceStmt.setInt(1, gameId);
+                ResultSet rs = priceStmt.executeQuery();
+
+                if (rs.next()) {
+                    pricePerHour = rs.getDouble("price_per_hour");
+                } else {
+                    JOptionPane.showMessageDialog(this, "Invalid Game ID!");
                     return;
                 }
             }
 
-            // Validate Game ID and get price
-            double pricePerHour;
-            try (Connection conn = getConnection();
-                 PreparedStatement stmt = conn.prepareStatement("SELECT price_per_hour FROM games WHERE game_id = ?")) {
-                stmt.setInt(1, gameId);
-                ResultSet rs = stmt.executeQuery();
-                if (!rs.next()) {
-                    JOptionPane.showMessageDialog(this, "Error: Game ID not found!");
-                    return;
-                }
-                pricePerHour = rs.getDouble("price_per_hour");
+            // Calculate total price
+            double totalPrice = duration * pricePerHour;
+
+            // Insert booking into the database
+            String insertQuery = "INSERT INTO bookings (customer_id, game_id, duration, total_price) VALUES (?, ?, ?, ?)";
+            try (PreparedStatement insertStmt = conn.prepareStatement(insertQuery)) {
+                insertStmt.setInt(1, customerId);
+                insertStmt.setInt(2, gameId);
+                insertStmt.setInt(3, duration);
+                insertStmt.setDouble(4, totalPrice);
+                insertStmt.executeUpdate();
             }
 
-            // Calculate total cost
-            double totalCost = pricePerHour * hours;
+            JOptionPane.showMessageDialog(this, "Game booked successfully!\nTotal Price: $" + totalPrice);
 
-            // Insert into bookings
-            try (Connection conn = getConnection();
-                 PreparedStatement stmt = conn.prepareStatement("INSERT INTO bookings (customer_id, game_id, hours_booked, total_cost) VALUES (?, ?, ?, ?)")) {
-                stmt.setInt(1, customerId);
-                stmt.setInt(2, gameId);
-                stmt.setInt(3, hours);
-                stmt.setDouble(4, totalCost);
-                stmt.executeUpdate();
-                JOptionPane.showMessageDialog(this, "Booking successful! Total Cost: $" + totalCost);
-            }
-        } catch (NumberFormatException | SQLException e) {
-            JOptionPane.showMessageDialog(this, "Error: " + e.getMessage());
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Invalid input! Please enter numbers only.");
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Database error: " + e.getMessage());
         }
     }
 
-    // View bookings
-    private void viewBookings() {
-        StringBuilder result = new StringBuilder("Game Bookings:\n");
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(
-                     "SELECT b.booking_id, c.customer_name, g.game_name, b.hours_booked, b.total_cost " +
-                             "FROM bookings b " +
-                             "JOIN customers c ON b.customer_id = c.customer_id " +
-                             "JOIN games g ON b.game_id = g.game_id")) {
 
+    // ✅ View Bookings
+    private void viewBookings() {
+        JPanel panel = new JPanel(new BorderLayout());
+        JTextArea textArea = new JTextArea(15, 40);
+        textArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        String query = """
+            SELECT b.booking_id, c.customer_name, g.game_name, b.start_time, b.duration, b.total_price
+            FROM bookings b
+            JOIN customers c ON b.customer_id = c.customer_id
+            JOIN games g ON b.game_id = g.game_id
+            ORDER BY b.start_time DESC""";
+
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query);
+             ResultSet rs = stmt.executeQuery()) {
+
+            textArea.setText("Bookings:\n");
             while (rs.next()) {
-                result.append("Booking ID: ").append(rs.getInt("booking_id"))
-                        .append(", Customer: ").append(rs.getString("customer_name"))
-                        .append(", Game: ").append(rs.getString("game_name"))
-                        .append(", Hours: ").append(rs.getInt("hours_booked"))
-                        .append(", Total Cost: $").append(rs.getDouble("total_cost"))
-                        .append("\n");
+                textArea.append("Booking ID: " + rs.getInt("booking_id") + "\n");
+                textArea.append("Customer: " + rs.getString("customer_name") + "\n");
+                textArea.append("Game: " + rs.getString("game_name") + "\n");
+                textArea.append("Start Time: " + rs.getString("start_time") + "\n");
+                textArea.append("Duration: " + rs.getInt("duration") + " hours\n");
+                textArea.append("Total Price: $" + rs.getDouble("total_price") + "\n");
+                textArea.append("---------------------------\n");
             }
         } catch (SQLException e) {
-            result.append("Error: ").append(e.getMessage());
+            textArea.setText("Error: " + e.getMessage());
         }
-        JOptionPane.showMessageDialog(this, result.toString());
+
+        JOptionPane.showMessageDialog(this, panel, "View Bookings", JOptionPane.PLAIN_MESSAGE);
     }
 
     public static void main(String[] args) {
