@@ -254,32 +254,40 @@ public class GameCenterManagementSystem extends JFrame {
         panel.add(scrollPane, BorderLayout.CENTER);
 
         String query = """
-            SELECT b.booking_id, c.customer_name, g.game_name, b.start_time, b.duration, b.total_price
-            FROM bookings b
-            JOIN customers c ON b.customer_id = c.customer_id
-            JOIN games g ON b.game_id = g.game_id
-            ORDER BY b.start_time DESC""";
+        SELECT b.booking_id, c.customer_name, g.game_name, b.duration, b.total_price
+        FROM bookings b
+        JOIN customers c ON b.customer_id = c.customer_id
+        JOIN games g ON b.game_id = g.game_id
+        ORDER BY b.booking_id DESC""";  // Removed start_time
 
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(query);
              ResultSet rs = stmt.executeQuery()) {
 
             textArea.setText("Bookings:\n");
+            boolean hasResults = false;
+
             while (rs.next()) {
+                hasResults = true;
                 textArea.append("Booking ID: " + rs.getInt("booking_id") + "\n");
                 textArea.append("Customer: " + rs.getString("customer_name") + "\n");
                 textArea.append("Game: " + rs.getString("game_name") + "\n");
-                textArea.append("Start Time: " + rs.getString("start_time") + "\n");
                 textArea.append("Duration: " + rs.getInt("duration") + " hours\n");
                 textArea.append("Total Price: $" + rs.getDouble("total_price") + "\n");
                 textArea.append("---------------------------\n");
             }
+
+            if (!hasResults) {
+                textArea.setText("No bookings found.");
+            }
+
         } catch (SQLException e) {
             textArea.setText("Error: " + e.getMessage());
         }
 
         JOptionPane.showMessageDialog(this, panel, "View Bookings", JOptionPane.PLAIN_MESSAGE);
     }
+
 
     public static void main(String[] args) {
         new GameCenterManagementSystem();
